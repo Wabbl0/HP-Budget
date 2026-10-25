@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="HP Budget">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" href="icons/icon-512.png">
+<link rel="preload" href="fonts/chakra-petch-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="app.css">
+<title>HP Budget</title>
+</head>
+<body>
+<div id="app">
+  <header id="hud">
+    <div class="hud-top">
+      <svg class="heart" id="heart" viewBox="0 0 24 21" aria-hidden="true"><path d="M12 21 1.9 10.9A6.2 6.2 0 0 1 12 3.3a6.2 6.2 0 0 1 10.1 7.6z"/></svg>
+      <span class="hp-label">HP</span>
+      <span id="hp-value" class="game">0</span>
+      <span id="hp-max" class="game"></span>
+    </div>
+    <div class="hp" id="hp">
+      <div class="hp-ghost" id="hp-ghost"></div>
+      <div class="hp-fill" id="hp-fill"></div>
+      <div class="hp-ticks"></div>
+    </div>
+    <div class="hud-sub" id="hud-sub"></div>
+  </header>
+
+  <main>
+    <section class="view active" id="view-log">
+      <div id="amount" class="amount empty">
+        <span id="amount-sign"></span><span id="amount-num">0</span><span class="cur">€</span>
+      </div>
+      <div class="modes" id="modes">
+        <button data-mode="expense" class="on">− Spend</button>
+        <button data-mode="income">+ Income</button>
+        <button data-mode="refund">↩ Refund</button>
+      </div>
+      <div id="cats" class="cats"></div>
+      <div id="keypad" class="keypad">
+        <div class="key" role="button" data-k="1">1</div><div class="key" role="button" data-k="2">2</div><div class="key" role="button" data-k="3">3</div>
+        <div class="key" role="button" data-k="4">4</div><div class="key" role="button" data-k="5">5</div><div class="key" role="button" data-k="6">6</div>
+        <div class="key" role="button" data-k="7">7</div><div class="key" role="button" data-k="8">8</div><div class="key" role="button" data-k="9">9</div>
+        <div class="key" role="button" data-k=",">,</div><div class="key" role="button" data-k="0">0</div><div class="key back" role="button" data-k="back">⌫</div>
+      </div>
+    </section>
+    <section class="view" id="view-history"></section>
+    <section class="view" id="view-budget"></section>
+    <section class="view" id="view-settings"></section>
+  </main>
+
+  <nav id="tabs">
+    <button data-view="log" class="on"><span class="ico">⚔️</span>Log</button>
+    <button data-view="history"><span class="ico">📜</span>History</button>
+    <button data-view="budget"><span class="ico">📊</span>Budget</button>
+    <button data-view="settings"><span class="ico">⚙️</span>Settings<i class="badge" id="backup-badge" hidden></i></button>
+  </nav>
+</div>
+
+<div id="flash"></div>
+<div id="fx"></div>
+<div id="toasts"></div>
+<div id="sheet" aria-hidden="true">
+  <div class="sheet-backdrop" id="sheet-backdrop"></div>
+  <div class="sheet-panel" id="sheet-body"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
