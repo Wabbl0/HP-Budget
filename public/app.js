@@ -80,6 +80,7 @@ function defaultState() {
     tx: [],
     settings: { sound: true, startHP: null },
     use: {},
+    monthStart: {},
     lastBackup: null,
   };
 }
@@ -121,10 +122,11 @@ function stats(mk = thisMonth()) {
     else if (t.type === 'income') income += t.amount;
   }
   const planned = state.categories.reduce((s, c) => s + c.budget, 0);
-  const base = state.settings.startHP == null ? planned : state.settings.startHP;
+  const manual = state.monthStart[mk];
+  const base = manual != null ? manual : state.settings.startHP == null ? planned : state.settings.startHP;
   const max = base + income;
   const remaining = max - spent + refunds;
-  return { mk, byCat, spent, income, refunds, planned, base, max, remaining };
+  return { mk, byCat, spent, income, refunds, planned, base, max, remaining, manual: manual != null };
 }
 
 // Daily allowance: what's left after reserving unpaid fixed bills, spread over the days left (today included).
@@ -133,8 +135,9 @@ function daily(s) {
   const t = today();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const daysLeft = daysInMonth - now.getDate() + 1;
+  // A manually set HP is money already free to spend, so no bills are reserved from it.
   let unpaidFixed = 0;
-  for (const c of state.categories) if (c.kind === 'fixed') unpaidFixed += Math.max(0, c.budget - (s.byCat[c.id] || 0));
+  if (!s.manual) for (const c of state.categories) if (c.kind === 'fixed') unpaidFixed += Math.max(0, c.budget - (s.byCat[c.id] || 0));
   let spentToday = 0;
   for (const x of state.tx) {
     if (x.date !== t) continue;
@@ -593,6 +596,10 @@ function renderSettings() {
         <button class="switch ${state.settings.sound ? 'on' : ''}" data-act="sound" aria-label="Toggle sound"></button>
       </div>
       <div class="setting">
+        <label>HP right now<small>${stats().manual ? 'Set by hand for ' + monthLabel(thisMonth()) : 'Set what you actually have this month'}</small></label>
+        <button class="chip" data-act="hpnow">Set</button>
+      </div>
+      <div class="setting">
         <label>Month starts at<small>${startHP == null ? 'Planned budget: ' + fmt(stats().planned, { dec: false }) : 'Custom amount'}. Income adds on top.</small></label>
         <button class="chip" data-act="starthp">${startHP == null ? 'Auto' : fmt(startHP, { dec: false })}</button>
       </div>
@@ -779,6 +786,39 @@ function editStartHP() {
   });
 }
 
+// Sets this month's starting HP so that the HP left right now equals the amount entered.
+function editHPNow() {
+  const mk = thisMonth();
+  const s = stats(mk);
+  const body = openSheet(`
+    <h3>HP right now</h3>
+    <p class="note">How much can you spend for the rest of ${monthLabel(mk)}? Entries you've logged this month are kept. Next month starts from your planned budget again.</p>
+    <label class="field"><span>Amount (€)</span><input id="n-hp" inputmode="decimal" value="${(s.remaining / 100).toFixed(2).replace('.', ',')}"></label>
+    <button class="btn primary" id="n-save">Save</button>
+    ${s.manual ? '<button class="btn" id="n-reset">Back to planned budget</button>' : ''}
+    <button class="btn ghost" id="n-cancel">Cancel</button>`);
+  const input = $('#n-hp', body);
+  input.focus();
+  input.select();
+  $('#n-cancel', body).addEventListener('click', closeSheet);
+  if (s.manual) $('#n-reset', body).addEventListener('click', () => {
+    delete state.monthStart[mk];
+    save();
+    closeSheet();
+    renderAll();
+  });
+  $('#n-save', body).addEventListener('click', () => {
+    const v = parseAmount(input.value);
+    if (!Number.isFinite(v)) return toast('Enter a number', { kind: 'warn' });
+    state.monthStart[mk] = v - s.income + s.spent - s.refunds;
+    save();
+    closeSheet();
+    lastPct = null;
+    renderAll();
+    sfx.heal();
+  });
+}
+
 // ---------- navigation & render ----------
 let view = 'log';
 
@@ -853,6 +893,7 @@ $('#tabs').addEventListener('click', (e) => {
 });
 
 $('#sheet-backdrop').addEventListener('click', closeSheet);
+$('.hud-top').addEventListener('click', editHPNow);
 
 $('#view-history').addEventListener('click', (e) => {
   const t = e.target.closest('[data-tx]');
@@ -883,6 +924,7 @@ $('#view-settings').addEventListener('click', (e) => {
     renderSettings();
     sfx.coin();
   } else if (act === 'starthp') editStartHP();
+  else if (act === 'hpnow') editHPNow();
   else if (act === 'export') exportBackup();
   else if (act === 'import') $('#import-file').click();
   else if (act === 'wipe') {
