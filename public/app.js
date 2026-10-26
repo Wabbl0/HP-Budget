@@ -179,7 +179,7 @@ function daily(s) {
 }
 
 const pctOf = (spent, budget) => (budget > 0 ? (spent / budget) * 100 : spent > 0 ? Infinity : 0);
-const barClass = (p) => (p > 100 ? 'over' : p >= 80 ? 'warn' : '');
+const barClass = (p) => (p >= 100 ? 'over' : p >= 80 ? 'warn' : '');
 
 // ---------- sound (synthesized 8-bit) ----------
 let ac = null;
@@ -426,10 +426,11 @@ function renderCats() {
     : [...catOrder.map(expenseCat).filter(Boolean), ...state.categories.filter((c) => !catOrder.includes(c.id))];
   box.innerHTML = list.slice(0, 12).map((c) => {
     let bar = '';
+    // A mini HP bar of budget left: full red once used up, grey when the category has no budget.
     if (mode !== 'income' && c.budget > 0) {
       const p = pctOf(s.byCat[c.id] || 0, c.budget);
-      bar = `<i class="use ${barClass(p)}" style="width:${Math.min(100, Math.max(0, p))}%"></i>`;
-    }
+      bar = `<i class="use ${barClass(p)}" style="width:${p >= 100 ? 100 : 100 - Math.max(0, p)}%"></i>`;
+    } else if (mode !== 'income') bar = '<i class="use none"></i>';
     return `<button class="cat" data-cat="${c.id}"><span class="emo">${c.emoji}</span><span class="nm">${esc(c.name)}</span>${bar}</button>`;
   }).join('');
 }

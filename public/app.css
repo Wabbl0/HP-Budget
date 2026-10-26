@@ -292,6 +292,7 @@ main { flex: 1; min-height: 0; position: relative; }
 }
 .cat .use.warn { background: var(--hp-mid); }
 .cat .use.over { background: var(--hp-low); }
+.cat .use.none { width: 100%; background: #444; }
 .cat.pop { animation: pop .35s; }
 @keyframes pop { 40% { transform: scale(1.12); box-shadow: 0 0 18px var(--gold); } }
 
