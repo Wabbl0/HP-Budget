@@ -95,6 +95,19 @@ input, select, textarea { font: inherit; -webkit-user-select: text; user-select:
 }
 .low .heart { animation: beat .7s infinite; fill: var(--hp-low); filter: drop-shadow(0 0 6px rgba(255,77,94,.6)); }
 @keyframes beat { 0%,100% { transform: scale(1); } 30% { transform: scale(1.25); } }
+.heart { overflow: visible; }
+.heart .half { display: none; transform-box: view-box; transform-origin: 12px 21px; transition: transform .4s; }
+
+/* KO: no HP to start with and no income logged yet. Everything greys out except + Income. */
+.ko #hud, .ko #amount, .ko #cats, .ko #keypad, .ko .modes button:not([data-mode="income"]),
+.ko #view-history, .ko #view-budget, .ko #view-settings, .ko #tabs { filter: grayscale(1) brightness(.7); }
+#app.ko { background: radial-gradient(120% 60% at 50% -10%, #1a1a1a 0%, transparent 60%), var(--bg); }
+.ko .modes button[data-mode="income"]:not(.on) { border-color: var(--hp); color: var(--hp); }
+.ko .heart { animation: none; filter: none; fill: #555; }
+.ko .heart .whole { display: none; }
+.ko .heart .half { display: inline; }
+.ko .heart .l { transform: translateX(-1.5px) rotate(-12deg); }
+.ko .heart .r { transform: translateX(1.5px) rotate(12deg); }
 
 .hp-label { font-family: var(--game); font-weight: 700; letter-spacing: .08em; font-size: 15px; color: var(--muted); }
 #hp-value {

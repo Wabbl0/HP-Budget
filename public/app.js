@@ -369,6 +369,7 @@ function renderHUD() {
   $('#hp-value').textContent = fmt(s.remaining);
   $('#hp-max').textContent = '/' + fmt(s.max, { dec: false });
   hud.classList.toggle('over', s.remaining < 0);
+  $('#app').classList.toggle('ko', s.max <= 0);
   hud.classList.toggle('mid', pct <= 50 && pct > 20);
   hud.classList.toggle('low', pct <= 20);
 

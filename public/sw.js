@@ -1,5 +1,5 @@
 // Bump CACHE when any asset changes so phones pick up the new version.
-const CACHE = 'hp-budget-v7';
+const CACHE = 'hp-budget-v8';
 const ASSETS = [
   './',
   'index.html',
