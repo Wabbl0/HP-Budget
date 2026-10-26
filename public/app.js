@@ -78,7 +78,8 @@ function defaultState() {
     v: 1,
     categories: DEFAULT_CATEGORIES.map((c) => ({ ...c })),
     tx: [],
-    settings: { sound: true, startHP: null },
+    // income: expected monthly income per source. cashFrom: first month where HP fills from income.
+    settings: { sound: true, startHP: null, income: {}, cashFrom: '' },
     use: {},
     monthStart: {},
     lastBackup: null,
@@ -87,7 +88,10 @@ function defaultState() {
 
 function migrate(s) {
   const d = defaultState();
-  return { ...d, ...s, settings: { ...d.settings, ...(s.settings || {}) } };
+  const settings = { ...d.settings, ...(s.settings || {}) };
+  // Older data keeps its past months as they were; income-based HP starts next month.
+  if (!s.settings || s.settings.cashFrom == null) settings.cashFrom = shiftMonth(thisMonth(), 1);
+  return { ...d, ...s, settings };
 }
 
 function load() {
@@ -112,24 +116,46 @@ const expenseCat = (id) => state.categories.find((c) => c.id === id);
 const anyCat = (id) => expenseCat(id) || INCOME_SOURCES.find((c) => c.id === id) || { id, name: 'Unknown', emoji: '❔', budget: 0 };
 
 // ---------- money math ----------
-function stats(mk = thisMonth()) {
-  const byCat = {};
-  let spent = 0, income = 0, refunds = 0;
-  for (const t of state.tx) {
-    if (!t.date.startsWith(mk)) continue;
-    if (t.type === 'expense') { spent += t.amount; byCat[t.categoryId] = (byCat[t.categoryId] || 0) + t.amount; }
-    else if (t.type === 'refund') { refunds += t.amount; byCat[t.categoryId] = (byCat[t.categoryId] || 0) - t.amount; }
-    else if (t.type === 'income') income += t.amount;
-  }
-  const planned = state.categories.reduce((s, c) => s + c.budget, 0);
-  const manual = state.monthStart[mk];
-  const base = manual != null ? manual : state.settings.startHP == null ? planned : state.settings.startHP;
-  const max = base + income;
-  const remaining = max - spent + refunds;
-  return { mk, byCat, spent, income, refunds, planned, base, max, remaining, manual: manual != null };
+// Month an entry counts toward. Salary paid in the last 3 days of a month is for the next month
+// (it comes early when the 31st falls on a weekend).
+function txMonth(t) {
+  const mk = t.date.slice(0, 7);
+  if (t.type !== 'income' || t.categoryId !== 'salary') return mk;
+  const [y, m, d] = t.date.split('-').map(Number);
+  if (d <= new Date(y, m, 0).getDate() - 3) return mk;
+  const next = shiftMonth(mk, 1);
+  return next >= state.settings.cashFrom ? next : mk;
 }
 
-// Daily allowance: what's left after reserving unpaid fixed bills, spread over the days left (today included).
+function stats(mk = thisMonth()) {
+  const byCat = {}, bySrc = {};
+  let spent = 0, income = 0, refunds = 0;
+  for (const t of state.tx) {
+    if (txMonth(t) !== mk) continue;
+    if (t.type === 'expense') { spent += t.amount; byCat[t.categoryId] = (byCat[t.categoryId] || 0) + t.amount; }
+    else if (t.type === 'refund') { refunds += t.amount; byCat[t.categoryId] = (byCat[t.categoryId] || 0) - t.amount; }
+    else if (t.type === 'income') { income += t.amount; bySrc[t.categoryId] = (bySrc[t.categoryId] || 0) + t.amount; }
+  }
+  const planned = state.categories.reduce((s, c) => s + c.budget, 0);
+  // From cashFrom on, HP starts at 0 and fills with the income you log.
+  const cash = mk >= state.settings.cashFrom;
+  const manual = state.monthStart[mk];
+  const base = manual != null ? manual : state.settings.startHP == null ? (cash ? 0 : planned) : state.settings.startHP;
+  const max = base + income;
+  const remaining = max - spent + refunds;
+  return { mk, byCat, bySrc, spent, income, refunds, planned, base, max, remaining, cash, manual: manual != null };
+}
+
+// Expected income not logged yet this month. Not counted once HP is set by hand.
+function pendingIncome(s) {
+  if (!s.cash || s.manual) return 0;
+  let sum = 0;
+  for (const [id, amt] of Object.entries(state.settings.income)) sum += Math.max(0, amt - (s.bySrc[id] || 0));
+  return sum;
+}
+
+// Daily allowance: what's left plus income still to come, after reserving unpaid fixed bills,
+// spread over the days left (today included).
 function daily(s) {
   const now = new Date();
   const t = today();
@@ -146,7 +172,7 @@ function daily(s) {
     if (x.type === 'expense') spentToday += x.amount;
     else if (x.type === 'refund') spentToday -= x.amount;
   }
-  const pool = s.remaining + spentToday - unpaidFixed;
+  const pool = s.remaining + pendingIncome(s) + spentToday - unpaidFixed;
   const perDay = Math.floor(pool / daysLeft);
   return { perDay, todayLeft: perDay - spentToday, daysLeft, unpaidFixed };
 }
@@ -491,12 +517,12 @@ let histFilter = 'all';
 
 function renderHistory() {
   const v = $('#view-history');
-  const used = new Set(state.tx.filter((t) => t.date.startsWith(histMonth)).map((t) => t.categoryId));
+  const used = new Set(state.tx.filter((t) => txMonth(t) === histMonth).map((t) => t.categoryId));
   const filterCats = [...state.categories, ...INCOME_SOURCES].filter((c) => used.has(c.id));
   if (histFilter !== 'all' && !used.has(histFilter)) histFilter = 'all';
 
   const items = state.tx
-    .filter((t) => t.date.startsWith(histMonth) && (histFilter === 'all' || t.categoryId === histFilter))
+    .filter((t) => txMonth(t) === histMonth && (histFilter === 'all' || t.categoryId === histFilter))
     .sort((a, b) => b.date.localeCompare(a.date) || b.ts - a.ts);
 
   let html = `
@@ -542,6 +568,7 @@ let budgetMonth = thisMonth();
 function renderBudget() {
   const v = $('#view-budget');
   const s = stats(budgetMonth);
+  const pending = budgetMonth === thisMonth() ? pendingIncome(s) : 0;
   const rows = (kind) => state.categories.filter((c) => c.kind === kind).map((c) => {
     const spent = s.byCat[c.id] || 0;
     const p = pctOf(spent, c.budget);
@@ -571,6 +598,7 @@ function renderBudget() {
       <div class="kv"><span>+ Refunds</span><span style="color:var(--refund)">${fmt(s.refunds)}</span></div>
       <div class="kv"><span>− Spent</span><span style="color:var(--hp-low)">${fmt(s.spent)}</span></div>
       <div class="kv total"><span>HP left</span><span>${fmt(s.remaining)}</span></div>
+      ${pending ? `<div class="kv"><span>Income to come</span><span>${fmt(pending)}</span></div>` : ''}
     </div>
     <div class="card"><h2 class="game" style="font-size:14px;letter-spacing:.06em;margin:0 0 4px;color:var(--muted)">DAILY</h2>${rows('flexible')}</div>
     <div class="card"><h2 class="game" style="font-size:14px;letter-spacing:.06em;margin:0 0 4px;color:var(--muted)">BILLS</h2>${rows('fixed')}</div>
@@ -588,6 +616,7 @@ function renderSettings() {
   const v = $('#view-settings');
   const last = state.lastBackup ? new Date(state.lastBackup).toLocaleDateString('en-GB') : 'never';
   const startHP = state.settings.startHP;
+  const incomeTotal = Object.values(state.settings.income).reduce((a, b) => a + b, 0);
   v.innerHTML = `
     <div class="vh"><h2>Settings</h2></div>
     <div class="card">
@@ -600,8 +629,12 @@ function renderSettings() {
         <button class="chip" data-act="hpnow">Set</button>
       </div>
       <div class="setting">
-        <label>Month starts at<small>${startHP == null ? 'Planned budget: ' + fmt(stats().planned, { dec: false }) : 'Custom amount'}. Income adds on top.</small></label>
+        <label>Month starts at<small>${startHP == null ? '0, income fills HP' : 'Custom amount. Income adds on top'}</small></label>
         <button class="chip" data-act="starthp">${startHP == null ? 'Auto' : fmt(startHP, { dec: false })}</button>
+      </div>
+      <div class="setting">
+        <label>Monthly income<small>Not logged yet = added to daily allowance</small></label>
+        <button class="chip" data-act="income">${incomeTotal ? fmt(incomeTotal, { dec: false }) : 'Set'}</button>
       </div>
     </div>
     <div class="card">
@@ -770,7 +803,7 @@ function editStartHP() {
   const cur = state.settings.startHP;
   const body = openSheet(`
     <h3>Month starts at</h3>
-    <p class="note">Leave empty to start each month at your planned budget (sum of all categories). Set 0 if you'd rather fill HP only with the income you log.</p>
+    <p class="note">Leave empty to start each month at 0 and fill HP with the income you log.</p>
     <label class="field"><span>Amount (€)</span><input id="s-hp" inputmode="decimal" value="${cur == null ? '' : (cur / 100).toFixed(0)}" placeholder="Auto"></label>
     <button class="btn primary" id="s-save">Save</button>
     <button class="btn ghost" id="s-cancel">Cancel</button>`);
@@ -780,6 +813,34 @@ function editStartHP() {
     const v = raw === '' ? null : parseAmount(raw);
     if (v !== null && !(v >= 0)) return toast('Enter a number', { kind: 'warn' });
     state.settings.startHP = v;
+    save();
+    closeSheet();
+    renderAll();
+  });
+}
+
+const REGULAR_INCOME = ['salary', 'family', 'kela'];
+
+function editIncome() {
+  const inc = state.settings.income;
+  const body = openSheet(`
+    <h3>Monthly income</h3>
+    <p class="note">Total you expect per month. Salary paid in the last 3 days of a month counts toward the next month.</p>
+    ${INCOME_SOURCES.filter((c) => REGULAR_INCOME.includes(c.id)).map((c) => `
+    <label class="field"><span>${c.emoji} ${esc(c.name)} (€)</span><input data-src="${c.id}" inputmode="decimal" value="${inc[c.id] ? (inc[c.id] / 100).toFixed(0) : ''}" placeholder="0"></label>`).join('')}
+    <button class="btn primary" id="i-save">Save</button>
+    <button class="btn ghost" id="i-cancel">Cancel</button>`);
+  $('#i-cancel', body).addEventListener('click', closeSheet);
+  $('#i-save', body).addEventListener('click', () => {
+    const next = {};
+    for (const el of body.querySelectorAll('[data-src]')) {
+      const raw = el.value.trim();
+      if (raw === '') continue;
+      const v = parseAmount(raw);
+      if (!(v >= 0)) return toast('Enter a number', { kind: 'warn' });
+      if (v) next[el.dataset.src] = v;
+    }
+    state.settings.income = next;
     save();
     closeSheet();
     renderAll();
@@ -924,6 +985,7 @@ $('#view-settings').addEventListener('click', (e) => {
     renderSettings();
     sfx.coin();
   } else if (act === 'starthp') editStartHP();
+  else if (act === 'income') editIncome();
   else if (act === 'hpnow') editHPNow();
   else if (act === 'export') exportBackup();
   else if (act === 'import') $('#import-file').click();
