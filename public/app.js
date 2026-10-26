@@ -83,6 +83,7 @@ function defaultState() {
     use: {},
     monthStart: {},
     lastBackup: null,
+    leftoverSeen: thisMonth(), // last month the "left over" note was shown for
   };
 }
 
@@ -91,7 +92,7 @@ function migrate(s) {
   const settings = { ...d.settings, ...(s.settings || {}) };
   // Older data keeps its past months as they were; income-based HP starts next month.
   if (!s.settings || s.settings.cashFrom == null) settings.cashFrom = shiftMonth(thisMonth(), 1);
-  return { ...d, ...s, settings };
+  return { ...d, ...s, settings, leftoverSeen: s.leftoverSeen || thisMonth() };
 }
 
 function load() {
@@ -825,7 +826,7 @@ function editIncome() {
   const inc = state.settings.income;
   const body = openSheet(`
     <h3>Monthly income</h3>
-    <p class="note">Total you expect per month. Salary paid in the last 3 days of a month counts toward the next month.</p>
+    <p class="note">Total you expect per month. If it varies, use a low guess. Salary paid in the last 3 days of a month counts toward the next month.</p>
     ${INCOME_SOURCES.filter((c) => REGULAR_INCOME.includes(c.id)).map((c) => `
     <label class="field"><span>${c.emoji} ${esc(c.name)} (€)</span><input data-src="${c.id}" inputmode="decimal" value="${inc[c.id] ? (inc[c.id] / 100).toFixed(0) : ''}" placeholder="0"></label>`).join('')}
     <button class="btn primary" id="i-save">Save</button>
@@ -1004,13 +1005,30 @@ $('#view-settings').addEventListener('change', (e) => {
   if (e.target.id === 'import-file' && e.target.files[0]) importBackup(e.target.files[0]);
 });
 
+// Once a new month starts, say what was left over from the last one.
+function checkLeftover() {
+  const mk = thisMonth();
+  if (state.leftoverSeen >= mk) return;
+  const prev = shiftMonth(mk, -1);
+  state.leftoverSeen = mk;
+  save();
+  if (!state.tx.some((t) => txMonth(t) === prev)) return;
+  const left = stats(prev).remaining;
+  const msg = left >= 0
+    ? `💰 ${monthLabel(prev)}: <b>${fmt(left)}</b> left over. Into savings?`
+    : `${monthLabel(prev)}: overspent by <b>${fmt(-left)}</b>`;
+  toast(msg, { kind: left >= 0 ? '' : 'warn', actions: [{ label: 'OK', run() {} }], ms: 15000 });
+}
+
 // Refresh day/month numbers when returning to the app.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') renderAll();
+  if (document.visibilityState === 'visible') { renderAll(); checkLeftover(); }
 });
 
 // ---------- boot ----------
+save(); // keep fields added by migrate() from this month on
 renderAll();
+checkLeftover();
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
